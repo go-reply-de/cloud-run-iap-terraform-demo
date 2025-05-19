@@ -89,12 +89,19 @@ Deploy using Terraform, this will take several minutes to complete:
 terraform apply -auto-approve
 ```
 
-Grants the IAP service account the ability to run the Cloud Run service
+Grants the IAP service account the ability to **run a specific Cloud Run service**
 ```sh
 gcloud run services add-iam-policy-binding <APP_NAME> \
 --member='serviceAccount:service-<PROJECT_NUMBER>@gcp-sa-iap.iam.gserviceaccount.com'  \
 --role='roles/run.invoker'  \
 --region=<GCP_REGION>
+```
+
+(Optional) Grants the IAP service account the ability to **run all Cloud Run services in a specific project**
+```sh
+gcloud projects add-iam-policy-binding <PROJECT_ID> \
+--member='serviceAccount:service-<PROJECT_NUMBER>@gcp-sa-iap.iam.gserviceaccount.com'  \
+--role='roles/run.invoker'
 ```
 
 In this command fill in:
