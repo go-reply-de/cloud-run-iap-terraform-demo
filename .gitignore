@@ -3,3 +3,4 @@
 *.lock.hcl
 *.lock.info
 .terraform/
+*.auto.tfvars

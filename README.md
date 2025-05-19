@@ -43,23 +43,6 @@ Now enable billing for your new project:
 gcloud beta billing projects link cloud-run-iap-terraform-demo-1 --billing-account 0X0X0X-0X0X0X-0X0X0X
 ```
 
-### Enable APIs
-Enable the following APIs in your (currently selected) project:
-
-```sh
-gcloud services enable \
-    run.googleapis.com \
-    containerregistry.googleapis.com \
-    compute.googleapis.com \
-    iap.googleapis.com \
-    vpcaccess.googleapis.com
-```
-
-It might take a minute to complete. Optionally verify that these services are enabled for your current project:
-```sh
-gcloud services list
-```
-
 ### Create an OAuth2 web application
 Create OAuth2 web application (and note its client_id and client_secret)
 from https://console.cloud.google.com/apis/credentials.
@@ -68,7 +51,7 @@ If it asks you to Configure a consent screen first, then do so:
 - Choose 'External' for *User Type*
 - Fill in 'App name', e.g. `IAP Cloud Run Demo`
 - Select your email address from the dropdown, for 'User support email'
-- You can leave the 'App domain' section blank  
+- You can leave the 'App domain' section blank
 - Fill in your email address at the 'Developer contact information'
 - Click on 'save and continue' on the next screens and then the 'Credentials' menu link in the left menu bar
 
@@ -79,33 +62,46 @@ First initialize the Terraform:
 terraform init
 ```
 
+Create a tfvars file
+```
+cat > iap.auto.tfvars << EOF
+
+project_id        = "<GCP_PROJECT_ID>"
+region            = "<GCP_REGION>"
+domain            = "<IAP_DOMAIN>"
+app_name          = "<APP_name>"
+iap_client_id     = "<IAP_CLIENT_ID>"
+iap_client_secret = "<IAP_CLIENT_SECRET>"
+iap_group         = "<IAP_CLIENT_SECRET>"
+
+EOF
+
+```
+
 (Optional) preview what resources will be created:
 ```sh
-terraform apply -var project_id=<project-id> \
-    -var region=<region> \
-    -var domain=<domain> \
-    -var lb_name=<lb_name> \
-    -var iap_client_id=<client_id> \
-    -var iap_client_secret=<client_secret>
+terraform plan
 ```
 
 Deploy using Terraform, this will take several minutes to complete:
 
 ```sh
-terraform apply -var project_id=<project-id> \
-    -var region=<region> \
-    -var domain=<domain> \
-    -var lb_name=<lb_name> \
-    -var iap_client_id=<client_id> \
-    -var iap_client_secret=<client_secret> \
-    -auto-approve
+terraform apply -auto-approve
+```
+
+Grants the IAP service account the ability to run the Cloud Run service
+```sh
+gcloud run services add-iam-policy-binding <APP_NAME> \
+--member='serviceAccount:service-<PROJECT_NUMBER>@gcp-sa-iap.iam.gserviceaccount.com'  \
+--role='roles/run.invoker'  \
+--region=<GCP_REGION>
 ```
 
 In this command fill in:
 - project-id: the project id, e.g. `cloud-run-iap-terraform-demo-1`
 - region: the region, this is optional, will default to `us-central1`
 - domain: the domain name you want to use, e.g. `corpapp.ahmet.dev`
-- lb_name: name for the load balancer, this is optional, will default to `iap-lb`
+- app_name: name for the load balancer, this is optional, will default to `iap-lb`
 - iap_client_id: the client id for the oAuth client you created earlier
 - iap_client_secret: the client secret for the oAuth client you created earlier. You can view it by editing the oAuth client.
 
@@ -146,10 +142,6 @@ the created resources.
 The following diagram shows the infrastructure created.
 ![diagram](./diagrams/Infrastructure.png)
 
-### Serverless VPC Access Connector
-The [Serverless VPC Access][serverless vpc access] is the connection between your Cloud
-Run service and resources inside your VPC.
-
 ### Cloud Run Service
 The [Cloud Run Service][cloud run] is a compute service which actually runs your website.
 In this example a simple hello world Docker container.
@@ -162,7 +154,7 @@ Cloud Run service. It allows requests to the load balancer, to be routed to the 
 The [HTTP/S Load Balancer][load balancer] listens to incoming traffic on an IP address and directs this to a backend
 service. A [terraform module][tf lb] is used which creates several resources, such as:
 - Global Address
-- HTTP Proxy 
+- HTTP Proxy
 - Forwarding rules
 - Managed SSL certificate
 - Serverless NEG as backend

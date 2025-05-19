@@ -1,19 +1,5 @@
-/**
- * Copyright 2021 Google LLC
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *      http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
+data "google_project" "project" {
+}
 
 variable "project_id" {
   type = string
@@ -29,7 +15,7 @@ variable "domain" {
   type        = string
 }
 
-variable "lb_name" {
+variable "app_name" {
   description = "Name for load balancer and associated resources"
   default     = "iap-lb"
 }
@@ -44,39 +30,31 @@ variable "iap_client_secret" {
   sensitive = true
 }
 
+variable "iap_group" {
+  type      = string
+  sensitive = true
+}
+
 provider "google" {
   project = var.project_id
 }
 
-resource "google_vpc_access_connector" "connector" {
-  name          = "example-vpc-connector"
-  region        = var.region
-  project       = var.project_id
-  ip_cidr_range = "10.8.0.0/28"
-  network       = "default"
-}
+resource "google_cloud_run_v2_service" "default" {
+  name                = var.app_name
+  location            = var.region
+  project             = var.project_id
+  deletion_protection = false
 
-resource "google_cloud_run_service" "default" {
-  name     = "example"
-  location = var.region
-  project  = var.project_id
+  ingress = "INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER"
 
-  metadata {
-    annotations = {
-      "run.googleapis.com/ingress" : "internal-and-cloud-load-balancing"
+  template {
+    containers {
+      image = "gcr.io/cloudrun/hello"
     }
   }
-  template {
-    metadata {
-      annotations = {
-        "run.googleapis.com/vpc-access-connector" : google_vpc_access_connector.connector.name
-      }
-    }
-    spec {
-      containers {
-        image = "gcr.io/cloudrun/hello"
-      }
-    }
+  traffic {
+    type    = "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST"
+    percent = 100
   }
 }
 
@@ -86,16 +64,16 @@ resource "google_compute_region_network_endpoint_group" "serverless_neg" {
   network_endpoint_type = "SERVERLESS"
   region                = var.region
   cloud_run {
-    service = google_cloud_run_service.default.name
+    service = google_cloud_run_v2_service.default.name
   }
 }
 
 module "lb-http" {
   source  = "GoogleCloudPlatform/lb-http/google//modules/serverless_negs"
-  version = "5.1.0"
+  version = "~> 12.0"
 
   project = var.project_id
-  name    = var.lb_name
+  name    = var.app_name
 
   ssl                             = true
   managed_ssl_certificate_domains = [var.domain]
@@ -130,7 +108,7 @@ data "google_iam_policy" "iap" {
   binding {
     role = "roles/iap.httpsResourceAccessor"
     members = [
-      "group:everyone@google.com", // a google group
+      "group:${var.iap_group}", // a google group
       // "allAuthenticatedUsers"          // anyone with a Google account (not recommended)
       // "user:ahmetalpbalkan@gmail.com", // a particular user
     ]
@@ -139,10 +117,24 @@ data "google_iam_policy" "iap" {
 
 resource "google_iap_web_backend_service_iam_policy" "policy" {
   project             = var.project_id
-  web_backend_service = "${var.lb_name}-backend-default"
+  web_backend_service = "${var.app_name}-backend-default"
   policy_data         = data.google_iam_policy.iap.policy_data
   depends_on = [
     module.lb-http
+  ]
+}
+
+resource "google_cloud_run_v2_service_iam_member" "invoker" {
+  location = google_cloud_run_v2_service.default.location
+  project  = google_cloud_run_v2_service.default.project
+  name     = google_cloud_run_v2_service.default.name
+  role     = "roles/run.invoker"
+  member   = "serviceAccount:service-${data.google_project.project.number}@gcp-sa-iap.iam.gserviceaccount.com"
+
+  # Add this dependency
+  depends_on = [
+    module.lb-http,
+    google_iap_web_backend_service_iam_policy.policy
   ]
 }
 
